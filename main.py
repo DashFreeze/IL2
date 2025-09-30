@@ -17,10 +17,8 @@ splits = {
     "test": "data/test-00000-of-00001.parquet",
 }
 
-
-# --------------------------------------- Text-Bereinigung ---------------------------------------
-
-#  behält Subreddit-Zeile, entfernt TITLE, TL;DR, '---', normalisiert Whitespace
+# Beim Annotationstool und speziellen Funktionen hat ChatGPT geholfen:
+# behält Subreddit-Zeile, entfernt TITLE, TL;DR, '---', normalisiert Whitespace
 def clean_reddit_keep_subreddit(text: str) -> str:
     if not isinstance(text, str):
         text = "" if pd.isna(text) else str(text)
@@ -65,7 +63,7 @@ RAW_DF_TEST  = filter_subreddits(load_and_merge(splits["test"]))
 print(f"Train: {len(RAW_DF_TRAIN)} | Val: {len(RAW_DF_VAL)} | Test: {len(RAW_DF_TEST)}")
 
 
-# --------------------------------------- Annotation --------------------------------------
+# Annotation
 
 def annotate_texts(df, output_file="annotations.csv", limit=None):
     annotations = []
@@ -135,7 +133,7 @@ if __name__ == "__main__":
     annotate_texts(df_test)
 """
 
-# --------------------------------------- Label-Normalisierung ---------------------------------------
+# Preprocessing
 
 LABEL_MAP = {
     "toxic": 1,
@@ -213,13 +211,11 @@ def load_splits(
                        "X_test": Xte,  "y_test": yte}}
 
 
-# --------------------------------------- Reproduzierbarkeit  ---------------------------------------
+# Reproduzierbarkeit
 SEED = 42
 os.environ["PYTHONHASHSEED"] = str(SEED)
 random.seed(SEED)
 np.random.seed(SEED)
-
-# ===================== NEU: In-Memory Preprocessing (Header strip + Lemma) =====================
 
 # entfernt die Kopfzeile "SUBREDDIT: ..." – NACHDEM du schon nach Subreddits gefiltert hast
 SUBREDDIT_HEADER_RE = re.compile(r'(?mi)^\s*SUBREDDIT:\s*\S+\s*$')
@@ -230,7 +226,7 @@ def strip_subreddit_header(text: str) -> str:
     text = SUBREDDIT_HEADER_RE.sub("", text)
     return re.sub(r'\n{2,}', '\n', text).strip()
 
-# spaCy nur für Baseline (TF-IDF); für BERT nicht nötig
+# spaCy nur für Baseline (TF-IDF)
 def _build_spacy_en():
     try:
         import spacy
@@ -253,7 +249,7 @@ def preprocess_baseline_texts(texts: np.ndarray, nlp=None) -> np.ndarray:
         out.append(t2)
     return np.array(out, dtype=object)
 
-# --------------------------------------- Baseline (TF-IDF mit Logistic Regression)  ---------------------------------------
+# Baseline (TF-IDF mit Logistic Regression)
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
@@ -269,7 +265,6 @@ pipe = Pipeline([
     ("clf", LogisticRegression(max_iter=2000, class_weight="balanced"))
 ])
 
-# === NEU: Baseline nur in-memory vorbereiten (Header entfernen + Lemma)
 _nlp = _build_spacy_en()
 Xtr_prep = preprocess_baseline_texts(Xtr, _nlp)
 Xev_prep = preprocess_baseline_texts(Xev, _nlp)
@@ -281,8 +276,7 @@ print(classification_report(yev, pipe.predict(Xev_prep), digits=3))
 print("== TEST ==")
 print(classification_report(yte, pipe.predict(Xte_prep), digits=3))
 
-# Bert
-# BERT (English)
+# BERT
 from transformers import (
     AutoTokenizer, AutoModelForSequenceClassification,
     TrainingArguments, Trainer, EarlyStoppingCallback
@@ -298,7 +292,7 @@ train_ds, eval_ds, test_ds = ds["train"], ds["eval"], ds["test"]
 
 tok = AutoTokenizer.from_pretrained(MODEL_NAME)
 
-# === NEU: Für BERT nur den SUBREDDIT-Header entfernen (keine Lemmatisierung)
+# Für BERT nur den SUBREDDIT-Header entfernen 
 def tokenize(batch):
     cleaned = [strip_subreddit_header(t) for t in batch["text"]]
     return tok(cleaned, truncation=True, padding="max_length", max_length=512)
@@ -375,7 +369,7 @@ print("== TEST ==")
 print(trainer.evaluate(eval_dataset=test_ds))
 
 
-# === Vergleich: Baseline vs. BERT ===
+# Vergleich: Baseline vs. BERT
 from sklearn.metrics import confusion_matrix
 
 def summarize(split_name, model_name, y_true, y_pred):
@@ -390,7 +384,6 @@ def summarize(split_name, model_name, y_true, y_pred):
         "f1_macro": round(f1, 4),
     }
 
-# === NEU: für Baseline die vorbereiteten Arrays verwenden
 y_pred_ev_base = pipe.predict(Xev_prep)
 y_pred_te_base = pipe.predict(Xte_prep)
 
@@ -422,9 +415,7 @@ show_cm("Eval - BERT",     eval_ds["label"], y_pred_ev_bert)
 show_cm("Test - Baseline", yte, y_pred_te_base)
 show_cm("Test - BERT",     test_ds["label"], y_pred_te_bert)
 
-# ==============================
-# Cross-Validation: Baseline (TF-IDF + LogisticRegression)
-# ==============================
+#Cross-Validation: Baseline (TF-IDF + LogisticRegression)
 from sklearn.model_selection import StratifiedKFold, RepeatedStratifiedKFold
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 import numpy as np
@@ -437,10 +428,9 @@ def run_baseline_cv(data_dir="data", k=5, repeats=1, seed=42):
     print(f"[CV|Baseline] Train-Set: {len(X)} Beispiele | Klassenverteilung: "
           f"{(y==0).sum()} non-toxic, {(y==1).sum()} toxic")
 
-    # === NEU: spaCy einmal pro CV-Run
     _nlp_cv = _build_spacy_en()
 
-    # === NEU: Repeated Stratified K-Fold optional
+    # Repeated Stratified K-Fold
     if repeats and repeats > 1:
         cv = RepeatedStratifiedKFold(n_splits=k, n_repeats=repeats, random_state=seed)
         total_folds = k * repeats
@@ -460,7 +450,6 @@ def run_baseline_cv(data_dir="data", k=5, repeats=1, seed=42):
         X_tr, X_va = X[tr_idx], X[va_idx]
         y_tr, y_va = y[tr_idx], y[va_idx]
 
-        # === In-Memory Preprocessing für Baseline
         X_tr = preprocess_baseline_texts(X_tr, _nlp_cv)
         X_va = preprocess_baseline_texts(X_va, _nlp_cv)
 
@@ -497,9 +486,7 @@ def run_baseline_cv(data_dir="data", k=5, repeats=1, seed=42):
     return cv_df
 
 
-# ==============================
 # Cross-Validation: BERT (distilbert-base-uncased)
-# ==============================
 from datasets import Dataset
 from transformers import DataCollatorWithPadding
 
@@ -517,12 +504,12 @@ def run_bert_cv(model_name="distilbert-base-uncased", max_len=512, k=3, repeats=
     fp16 = torch.cuda.is_available()
     collator = DataCollatorWithPadding(tokenizer=tok, pad_to_multiple_of=8 if fp16 else None)
 
-    # === NEU: nur Header-Strip (keine Lemmas) für BERT
+    # Nur Header-Strip (keine Lemmas) für BERT
     def tokenize(batch):
         cleaned = [strip_subreddit_header(t) for t in batch["text"]]
         return tok(cleaned, truncation=True, max_length=max_len)
 
-    # === NEU: Repeated Stratified K-Fold optional
+    # Repeated Stratified K-Fold optional
     if repeats and repeats > 1:
         cv = RepeatedStratifiedKFold(n_splits=k, n_repeats=repeats, random_state=seed)
         total_folds = k * repeats
@@ -618,9 +605,7 @@ def run_bert_cv(model_name="distilbert-base-uncased", max_len=512, k=3, repeats=
     return cv_df
 
 
-# ==============================
-# Cross-Validation jetzt ausführen
-# ==============================
+# Cross-Validation
 print("\n>>> STARTE CROSS-VALIDATION (Baseline) …")
 _ = run_baseline_cv(data_dir="data", k=5, repeats=3, seed=SEED)
 
