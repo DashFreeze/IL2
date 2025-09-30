@@ -1,0 +1,5 @@
+split,model,accuracy,precision_macro,recall_macro,f1_macro
+eval,bert_distilbert,0.9433,0.928,0.9549,0.9385
+eval,baseline_tfidf_logreg,0.88,0.8657,0.9048,0.8737
+test,baseline_tfidf_logreg,0.64,0.5778,0.5664,0.5673
+test,bert_distilbert,0.64,0.5534,0.533,0.52
