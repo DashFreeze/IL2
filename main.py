@@ -17,7 +17,7 @@ splits = {
     "test": "data/test-00000-of-00001.parquet",
 }
 
-# Beim Annotationstool und speziellen Funktionen hat ChatGPT geholfen:
+# Beim Annotationstool, Cross-Validation und Funktionen zu Ausgaben von CSV und Prints hat ChatGPT geholfen:
 # behält Subreddit-Zeile, entfernt TITLE, TL;DR, '---', normalisiert Whitespace
 def clean_reddit_keep_subreddit(text: str) -> str:
     if not isinstance(text, str):
@@ -217,7 +217,7 @@ os.environ["PYTHONHASHSEED"] = str(SEED)
 random.seed(SEED)
 np.random.seed(SEED)
 
-# entfernt die Kopfzeile "SUBREDDIT: ..." – NACHDEM du schon nach Subreddits gefiltert hast
+# entfernt die Kopfzeile "SUBREDDIT: ...", aber erst nach der Filterung von Subreddits
 SUBREDDIT_HEADER_RE = re.compile(r'(?mi)^\s*SUBREDDIT:\s*\S+\s*$')
 
 def strip_subreddit_header(text: str) -> str:
